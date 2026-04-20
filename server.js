@@ -75,15 +75,47 @@ app.post('/api/parse-resume', upload.single('file'), async (req, res) => {
 
       const fileBuffer = fs.readFileSync(filePath);
 
+      const somarkBaseUrl = process.env.SOMARK_API_URL || 'https://somark.tech/api/v1';
       const formData = new FormData();
       formData.append('api_key', somarkKey);
-      formData.append('file', fileBuffer, { filename: originalName });
 
-      const somarkBaseUrl = process.env.SOMARK_API_URL || 'https://somark.tech/api/v1';
+      // 根据文件类型设置 Content-Type
+      let contentType = 'application/octet-stream';
+      if (fileType === 'pdf') {
+        contentType = 'application/pdf';
+      } else if (fileType === 'docx') {
+        contentType = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+      } else if (fileType === 'doc') {
+        contentType = 'application/msword';
+      }
+
+      formData.append('file', fileBuffer, {
+        filename: originalName,
+        contentType: contentType,
+        knownLength: fileBuffer.length
+      });
+
+      // 调试日志
+      console.log('=== SoMark API 调试信息 ===');
+      console.log('文件大小:', fileBuffer.length, 'bytes');
+      console.log('文件名:', originalName);
+      console.log('文件类型:', fileType);
+      console.log('API URL:', `${somarkBaseUrl}/parse/sync`);
+      console.log('Headers:', formData.getHeaders());
+      console.log('FormData 长度:', formData.getLengthSync());
+      console.log('==========================');
+
+      // 获取 FormData 的完整缓冲区
+      const formDataBuffer = formData.getBuffer();
+      console.log('FormData 缓冲区大小:', formDataBuffer.length, 'bytes');
+
       const somarkResponse = await fetch(`${somarkBaseUrl}/parse/sync`, {
         method: 'POST',
-        headers: formData.getHeaders(),
-        body: formData
+        headers: {
+          ...formData.getHeaders(),
+          'Content-Length': formDataBuffer.length
+        },
+        body: formDataBuffer
       });
 
       if (!somarkResponse.ok) {

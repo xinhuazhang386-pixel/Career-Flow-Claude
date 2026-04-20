@@ -80,10 +80,11 @@ async function parsePdfWithSoMark(fileBuffer: Buffer, filename: string): Promise
   formData.append('file', fileBuffer, { filename });
 
   const somarkBaseUrl = process.env.SOMARK_API_URL || 'https://somark.tech/api/v1';
+  // Note: formData 可以直接作为 body 使用，因为它实现了 Readable 流接口
   const somarkResponse = await fetch(`${somarkBaseUrl}/parse/sync`, {
     method: 'POST',
     headers: formData.getHeaders(),
-    body: formData.getBuffer()
+    body: formData as any
   });
 
   if (!somarkResponse.ok) {
@@ -112,16 +113,24 @@ function parseFormData(request: VercelRequest): Promise<{
   fileType: string;
 }> {
   return new Promise((resolve, reject) => {
+    console.log('开始解析 multipart/form-data 请求');
+    console.log('Content-Type:', request.headers['content-type']);
+    console.log('Content-Length:', request.headers['content-length']);
+
     const busboy = Busboy({ headers: request.headers });
     let fileBuffer: Buffer | null = null;
     let filename = '';
     let fileSize = 0;
+    let fileFieldFound = false;
 
     busboy.on('file', (fieldname, file, info) => {
+      console.log('接收到文件字段:', fieldname, '文件名:', info.filename);
+      fileFieldFound = true;
       const { filename: originalName } = info;
 
       // 验证文件类型
       if (!validateFileType(originalName)) {
+        console.log('文件类型验证失败:', originalName);
         file.resume(); // 丢弃文件流
         reject(new Error('不支持的文件格式。仅支持 PDF、DOC、DOCX 文件。'));
         return;
@@ -132,7 +141,9 @@ function parseFormData(request: VercelRequest): Promise<{
 
       file.on('data', (chunk: Buffer) => {
         fileSize += chunk.length;
+        console.log(`接收到文件块: ${chunk.length} bytes, 总计: ${fileSize} bytes`);
         if (fileSize > MAX_FILE_SIZE) {
+          console.log(`文件大小超过限制: ${fileSize} > ${MAX_FILE_SIZE}`);
           file.resume();
           reject(new Error(`文件大小超过限制。最大支持 ${MAX_FILE_SIZE / (1024 * 1024)}MB。`));
           return;
@@ -141,41 +152,70 @@ function parseFormData(request: VercelRequest): Promise<{
       });
 
       file.on('end', () => {
+        console.log('文件接收完成，总大小:', fileSize, 'bytes');
         fileBuffer = Buffer.concat(chunks);
       });
 
       file.on('error', (err) => {
+        console.error('文件流错误:', err);
         reject(err);
       });
     });
 
+    busboy.on('field', (fieldname, val) => {
+      console.log(`字段 ${fieldname}: ${val}`);
+    });
+
     busboy.on('finish', () => {
+      console.log('busboy 解析完成，文件字段找到:', fileFieldFound, '文件缓冲区:', fileBuffer?.length || 0, 'bytes');
+
+      if (!fileFieldFound) {
+        reject(new Error('请求中没有找到文件字段。请确保表单字段名为 "file"。'));
+        return;
+      }
+
       if (!fileBuffer) {
-        reject(new Error('没有上传文件'));
+        reject(new Error('没有上传文件或文件为空'));
         return;
       }
 
       const fileType = getFileExtension(filename);
+      console.log('文件信息:', { filename, fileType, size: fileBuffer.length });
       resolve({ fileBuffer, filename, fileType });
     });
 
     busboy.on('error', (err) => {
+      console.error('busboy 解析错误:', err);
       reject(err);
     });
 
     // 将请求体管道到 busboy
-    if (request.body) {
-      if (typeof (request.body as any).pipe === 'function') {
-        // 如果已经是流，直接管道
-        (request.body as any).pipe(busboy);
+    try {
+      if (request.body) {
+        console.log('请求体类型:', typeof request.body, 'is buffer?', Buffer.isBuffer(request.body));
+
+        if (Buffer.isBuffer(request.body)) {
+          // 如果是 Buffer，直接创建流
+          const stream = Readable.from(request.body);
+          stream.pipe(busboy);
+        } else if (typeof request.body === 'string') {
+          // 如果是字符串，转换为 Buffer
+          const stream = Readable.from(Buffer.from(request.body));
+          stream.pipe(busboy);
+        } else if (typeof (request.body as any).pipe === 'function') {
+          // 如果已经是流，直接管道
+          (request.body as any).pipe(busboy);
+        } else {
+          console.error('无法处理的请求体类型:', typeof request.body);
+          reject(new Error('无法处理的请求体格式'));
+        }
       } else {
-        // 否则转换为 Readable 流
-        const stream = Readable.from(Buffer.from(request.body as any));
-        stream.pipe(busboy);
+        console.error('请求体为空');
+        reject(new Error('请求体为空'));
       }
-    } else {
-      // 如果没有请求体，可能是请求已被处理
-      reject(new Error('请求体为空'));
+    } catch (error) {
+      console.error('请求体处理错误:', error);
+      reject(new Error(`请求体处理失败: ${error instanceof Error ? error.message : '未知错误'}`));
     }
   });
 }
