@@ -1,23 +1,24 @@
+// 简历文件
 export interface ResumeItem {
   id: string;
   name: string;
-  fileType: string;
+  fileType: 'pdf' | 'doc' | 'docx';
   fileSize: number;
   uploadDate: string;
-  textContent?: string;
+  text?: string;
 }
 
+// 工作区状态
 export interface WorkspaceState {
   currentStep: number;
   selectedResumeId: string | null;
-  jobInfo: {
-    company: string;
-    position: string;
-    jdText: string;
-  };
+  companyName: string;
+  roleName: string;
+  jdText: string;
   modifiedContent: string;
 }
 
+// 面试问题
 export interface InterviewQuestion {
   id: string;
   question: string;
@@ -26,6 +27,7 @@ export interface InterviewQuestion {
   feedback?: string;
 }
 
+// 简历优化 - 左侧面板
 export interface ResumeOptimizationLeftPanel {
   section: string;
   original_text: string;
@@ -35,28 +37,30 @@ export interface ResumeOptimizationLeftPanel {
   note: string;
 }
 
+// 简历优化 - 右侧面板
 export interface ResumeOptimizationRightPanel {
   jd_keyword: string;
-  jd_reason: string;
-  matched_resume_section: string;
+  reason: string;
   matched_resume_evidence: string;
   suggestion: string;
   safe_to_add: 'yes' | 'no';
 }
 
+// 简历优化结果
 export interface ResumeOptimizationResult {
   left_panel: ResumeOptimizationLeftPanel[];
   right_panel: ResumeOptimizationRightPanel[];
   overall_note: string;
 }
 
+// 内容会话
 export interface ContentSession {
   id: string;
-  company: string;
-  role: string;
-  jd: string;
+  companyName: string;
+  roleName: string;
+  jdText: string;
   resumeId: string;
-  matchResult: {
+  matchResult?: {
     score: number;
     pros: string[];
     gaps: string[];
@@ -68,19 +72,28 @@ export interface ContentSession {
   createdAt: string;
 }
 
-export type ApplicationStatus = '已投递' | '笔试中' | '一面' | '二面' | 'Offer' | 'Rejected' | '已结束';
+// 申请状态
+export type ApplicationStatus =
+  | '已投递'
+  | '笔试中'
+  | '一面'
+  | '二面'
+  | 'Offer'
+  | 'Rejected'
+  | '已结束';
 
+// 时间线条目
 export interface TimelineEntry {
-  id: string;
   status: ApplicationStatus;
   date: string;
   note: string;
 }
 
+// 投递记录
 export interface ApplicationItem {
   id: string;
-  company: string;
-  position: string;
+  companyName: string;
+  roleName: string;
   channel: string;
   status: ApplicationStatus;
   applyDate: string;
@@ -90,9 +103,19 @@ export interface ApplicationItem {
   updatedAt: string;
 }
 
+// 用户设置
 export interface UserSettings {
   userName: string;
   email: string;
   avatar?: string;
   theme: 'light' | 'dark';
+  // API 配置
+  apiKey?: string;
+  apiUrl?: string;
+}
+
+// API 设置（独立存储）
+export interface ApiSettings {
+  apiKey: string;
+  apiUrl: string;
 }
