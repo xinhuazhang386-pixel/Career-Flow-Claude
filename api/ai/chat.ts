@@ -1,41 +1,29 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 
-/**
- * AI Chat Proxy Handler
- * Path: /api/ai/chat
- * 
- * This serverless function acts as a secure bridge between the frontend 
- * and the third-party OpenAI proxy API.
- */
-export default async function handler(
-  request: VercelRequest,
-  response: VercelResponse
-) {
-  // 1. Only allow POST requests
+export default async function handler(request: VercelRequest, response: VercelResponse) {
   if (request.method !== 'POST') {
     return response.status(405).json({ error: 'Method Not Allowed' });
   }
 
-  // 2. Get API Key from environment variables (Secure: hidden from client)
-  const apiKey = process.env.OPENAI_API_KEY;
-
-  if (!apiKey) {
-    console.error('OPENAI_API_KEY is missing in environment variables');
-    return response.status(500).json({ 
-      error: 'Server configuration error: API Key is missing.' 
-    });
-  }
-
   try {
-    const { messages, temperature = 0.7, response_format } = request.body;
+    const { messages, temperature = 0.7, response_format, apiKey: clientApiKey, apiUrl: clientApiUrl } = request.body;
 
     if (!messages || !Array.isArray(messages)) {
       return response.status(400).json({ error: 'Invalid request: messages are required.' });
     }
 
-    // 3. Forward request to the OpenAI proxy (gptsapi)
-    const openaiBaseUrl = process.env.OPENAI_API_URL || 'https://api.gptsapi.net';
-    const apiResponse = await fetch(`${openaiBaseUrl}/v1/chat/completions`, {
+    // 优先使用客户端传入的 API Key，否则用环境变量
+    const apiKey = clientApiKey || process.env.OPENAI_API_KEY;
+    if (!apiKey) {
+      return response.status(500).json({
+        error: '未配置 API Key。请在设置页面配置你的 OpenAI API Key。'
+      });
+    }
+
+    // 优先使用客户端传入的 API URL，否则用环境变量，最后默认 OpenAI 官方
+    const baseUrl = clientApiUrl || process.env.OPENAI_API_URL || 'https://api.openai.com';
+
+    const apiResponse = await fetch(`${baseUrl}/v1/chat/completions`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -50,19 +38,15 @@ export default async function handler(
     });
 
     if (!apiResponse.ok) {
-      const errorData = await apiResponse.json();
-      console.error('Upstream API Error:', errorData);
-      return response.status(apiResponse.status).json({ 
-        error: 'AI Service currently unavailable.',
-        details: errorData 
+      const errorData = await apiResponse.json().catch(() => ({}));
+      return response.status(apiResponse.status).json({
+        error: 'AI 服务暂时不可用，请检查 API Key 是否正确。',
+        details: errorData
       });
     }
 
     const data = await apiResponse.json();
-    
-    // 4. Return the data to the frontend
     return response.status(200).json(data);
-
   } catch (error) {
     console.error('Proxy Error:', error);
     return response.status(500).json({ error: 'Internal Server Error' });
